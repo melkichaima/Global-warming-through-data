@@ -1,0 +1,132 @@
+---
+title: "Creative Challenge: Climate Data Art"
+subtitle: "Global warming through data — NASA GISTEMP"
+output:
+  html_document:
+    theme: spacelab
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE, fig.align = "center")
+```
+
+## Brief
+
+This document contains the creative-challenge deliverable for the *Global warming through data* lab: one original piece of data art built programmatically from the NASA GISTEMP monthly temperature-anomaly series.
+
+## Importing and preparing the data
+
+```{r import}
+library(tidyverse)
+
+url <- "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv"
+
+# Try the live NASA feed first; fall back to a local cached copy of the
+# same file (kept next to this document) if the network is unavailable.
+temp_raw <- tryCatch(
+  read_csv(url, skip = 1, na = c("***", "****"), show_col_types = FALSE),
+  error = function(e) {
+    message("NASA server unreachable; using the cached local copy.")
+    read_csv("GLB.Ts+dSST.csv", na = c("***", "****"), show_col_types = FALSE)
+  }
+)
+
+temp <- temp_raw |>
+  select(Year, Jan:Dec) |>
+  pivot_longer(Jan:Dec, names_to = "month", values_to = "anomaly") |>
+  mutate(month = factor(month, levels = month.abb)) |>
+  drop_na(anomaly) |>
+  arrange(Year, month)
+
+glimpse(temp)
+```
+
+Each row is one month since 1880; `anomaly` is the temperature deviation (°C) from the 1951–1980 baseline.
+
+## The artwork: *Tree Rings of a Warming Planet*
+
+The design goal here is **legibility at a glance**: no overlapping lines, no scattered texture to decode, just one solid, concentric ring per year, exactly like a cross-section through a tree trunk. Each year's twelve months are averaged into a single color. The read is immediate: pale, cool rings pack the center (the oldest years); a thick, solid band of red dominates the outer edge (the most recent years).
+
+
+```{r tree-rings-of-a-warming-planet, fig.width=8, fig.height=8}
+
+annual_mean <- temp |>
+  group_by(Year) |>
+  summarise(year_mean = mean(anomaly), .groups = "drop")
+
+rings <- temp |>
+  mutate(month_num = as.integer(month)) |>
+  left_join(annual_mean, by = "Year")
+
+artwork <- ggplot(rings, aes(x = month_num, y = Year, fill = year_mean)) +
+  geom_tile() +
+  scale_x_continuous(limits = c(0.5, 12.5), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_polar(theta = "x") +
+  scale_fill_gradient2(
+    low = "#2166AC", mid = "#F2F2F2", high = "#B2182B",
+    midpoint = 0, name = "°C"
+  ) +
+  labs(
+    title = "Tree Rings of a Warming Planet",
+    subtitle = paste0(
+      "One ring per year, ", min(rings$Year), " (center) to ", max(rings$Year),
+      " (outer edge) — redder rings are warmer years"
+    ),
+    caption = "Source: NASA GISTEMP v4  |  Baseline: 1951–1980"
+  ) +
+  theme_void(base_size = 13) +
+  theme(
+    plot.background  = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.title    = element_text(hjust = 0.5, face = "bold", size = 20, margin = margin(b = 4)),
+    plot.subtitle = element_text(hjust = 0.5, size = 10.5, color = "grey30", margin = margin(b = 10)),
+    plot.caption  = element_text(hjust = 0.5, size = 8, color = "grey50", margin = margin(t = 10)),
+    legend.position = "bottom",
+    legend.key.width = unit(1.1, "cm"),
+    plot.margin = margin(18, 18, 14, 18)
+  )
+
+artwork
+
+ggsave("tree_rings_of_a_warming_planet.png", artwork, width = 8, height = 8, units = "in", dpi = 300, bg = "white")
+```
+
+**How the data are mapped to the artwork:**
+
+- `Year` is mapped to **radius** (`y`, bent into a circle by `coord_polar`): the oldest year (1880) forms the innermost ring, and each later year adds one ring further out, exactly like a tree adding one growth ring per year. This is the one purely chronological, non-negotiable piece of structure.
+- `month_num` is mapped to **angle** (`x`): the twelve months of a year are spread evenly around the full circle, so each ring is a complete 360° band rather than a partial arc.
+- `year_mean` — the station-standard annual average anomaly for that year — is mapped to **fill color**, on the same blue–white–red diverging scale (centered on the 1951–1980 zero baseline) used throughout the lab. Because every month within a ring shares its year's average, each ring renders as one clean, uniform color band instead of twelve slightly different wedges — this is what keeps the piece calm and immediately readable rather than textured and noisy.
+- No axis, gridline, or tick mark is drawn (`theme_void()`). The canvas is explicitly white, and the plot is exported as a literal 8 × 8 inch square, so it always renders as a true square.
+
+**Why this is easy to understand at a glance:** the only two things a viewer needs to notice are:
+(1) rings further from the center are more recent, and (2) color goes from pale/blue to deep red moving outward, both of which are immediately visible without reading a single word of the subtitle. The rings get redder as they get closer to today.
+
+## Final reflection
+
+**1. How does data art differ from conventional statistical visualization?**
+
+A conventional statistical chart (a line chart, a boxplot) is built to be *read*: every mark has an axis, a scale, and a label, and the goal is that two different viewers extract the same numbers from it. Data art, a tree-ring cross-section, a spiral, a flower garden, a woven tapestry of tiles, is built to be *felt* first and *read* second. It keeps the same underlying mapping from data to visual properties (position, color, length), but it removes the scaffolding — axes, gridlines, exact tick labels, that a statistical chart relies on, and it chooses a geometric metaphor with emotional or narrative resonance instead. The precision of a statistical chart is traded for the immediacy and memorability of an image.
+
+**2. Can an artistic representation communicate aspects of climate change more effectively than a traditional chart?**
+
+In some respects, yes. The tree-ring piece above communicates "the planet has warmed, steadily and recently" in under a second, to an audience that might never engage with a line-and-axis chart, this is part of why NASA and climate communicators such as Ed Hawkins have popularized similarly stripped-down visual metaphors (the climate spiral, warming stripes) in public-facing contexts. Data art excels at delivering one dominant message and making it emotionally memorable. 
+A traditional chart remains better for precise, comparative questions ("how much warmer was 1998 than 1980, exactly?"), because it preserves scale and allows accurate value retrieval. The two approaches are complementary, not substitutes.
+
+**3. What information might be lost in the process?**
+
+Several things are sacrificed for visual impact:
+
+- **Exact magnitudes.** Without visible axes or tick labels on the rings themselves, a viewer cannot read off the anomaly for a specific year; only relative comparisons ("redder than its neighbor") survive.
+- **Uncertainty and measurement error.** Older observations (pre-1950s, especially) rest on sparser instrumental coverage and are therefore less certain than recent ones, none of that uncertainty is visible in a solid-colored ring.
+- **Within-year variation.** Averaging each year down to one `year_mean` color is exactly what makes the rings clean and legible, but it also hides the real month-to-month swings, a mild year with one extreme month looks identical to a uniformly mild year.
+- **Context.** The baseline period (1951–1980), the land/ocean coverage behind the number, and the distinction between short-term weather variability and the long-term trend are all omitted from the image itself and must be supplied by the accompanying caption or narrative.
+
+**4. Do you see any bias in any of the three data artworks? How can you avoid it?**
+
+The main source of bias, in the tree rings above as much as in the lab's tapestry, spiral, and flower-garden pieces, is the *choice of color scale and its midpoint*. Centering the diverging palette at `midpoint = 0` is defensible and transparent (it matches the official 1951–1980 baseline), but shifting that midpoint or stretching the color range can visually exaggerate or dampen how dramatic the warming looks without changing a single data value, a well-known way visualizations can mislead. A second, subtler bias is in what gets aggregated away: collapsing twelve months into one `year_mean` per ring is a modeling choice, and a different choice (e.g., coloring by the single hottest month of the year instead of the average) would produce a visibly more alarming, but equally "true", set of rings. A third is the decorative form itself: a tree-ring metaphor borrows an association with age and permanence that a plain bar chart doesn't carry, which can make the piece feel more "natural" or authoritative than the underlying statistics alone warrant.
+
+To avoid these biases: always report the baseline period and color-scale limits alongside the artwork, prefer symmetric, zero-centered diverging scales fixed to the same values across related plots, state clearly which aggregation (mean, max, median) produced each visual unit, and pair every data-art piece with at least one conventional, fully labeled chart so a skeptical reader can verify the artistic impression against the numbers.
+
+
